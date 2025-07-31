@@ -8,7 +8,7 @@ The purpose of this project is to compare the performance of different optimisat
 
 # Project structure
 Resource allocation for OFDMA under IEEE 802.11ax/
-├── RunSimulator/
+├── RunSimulator/  
 │   ├── DynamicProgrammingCombinedwithTimsort.py  # The simulator for DPT algorithm. The retransmission rate can be set by the parameter retransmission_rate.  
 │   ├── FIFO.py  # The simulator for FIFO algorithm. The retransmission rate can be set by the parameter retransmission_rate.  
 │   ├── Genetic Algorithm.py # The simulator for GnA algorithm. The retransmission rate can be set by the parameter retransmission_rate.  
