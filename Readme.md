@@ -26,10 +26,7 @@ Resource allocation for OFDMA under IEEE 802.11ax/
 ├── .gitignore  
 └── Readme.md  
 
-# Running the project
-
-The `RunSimulator/` directory contains several simulation scripts, each corresponding to a different RU allocation algorithms. You can run any of them independently using Python. You can set the channel conditions by setting the retransmission_rate which represents the retransmission rate of the packet transmissions in each python file named by different RU allocation algorithms name.
-
+# Introduction to the project
 ![flowchart](flowchart.png)
 
 The figure above illustrates the flow chart of the simulator in this project.
@@ -47,6 +44,10 @@ After the simulation of packet transmissions, the simulator counts the data whic
 Finally, the simulator output the data above in text form.
 
 In summary, this simulator complies with the IEEE 802.11ax standard and implements various resource allocation and scheduling algorithms, while measuring multi-dimensional performance metrics such as channel utilisation, R value, fairness, and computation time. Although the physical layer modelling simplifies complexity (by using fixed MCS values and a fixed number of spatial streams in experiments), its core purpose is to compare the RU allocation algorithms on the MAC layer and their impact on network performance. Therefore, this simulator can be considered reliable for evaluating different RU allocation algorithms.
+
+# Running the project
+
+The `RunSimulator/` directory contains several simulation scripts, each corresponding to a different RU allocation algorithms. You can run any of them independently using Python. You can set the channel conditions by setting the retransmission_rate which represents the retransmission rate of the packet transmissions in each python file named by different RU allocation algorithms name.
 
 # Library requirements
 This project uses Python 3.9.
