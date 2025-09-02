@@ -1,7 +1,7 @@
 import simpy
 import numpy as np
 from functools import partial
-from random import randint, seed
+from random import randint, seed, random, gauss
 
 from ns.packet.dist_generator import DistPacketGenerator
 from ns.packet.sink import PacketSink
@@ -10,15 +10,29 @@ from ns.utils.generators.MAP_MSP_generator import BMAP_generator
 MIN_PKT_SIZE = 100
 MAX_PKT_SIZE = 1000
 
-def packet_size(myseed=None):
+
+def mixed_packet_size(myseed=None, pareto_shape=2.0, gaussian_mean=550, gaussian_std=150):
+    """
+    50% 使用 Pareto 分布, 50% 使用 Gaussian 分布
+    """
     seed(myseed)
-    return randint(MIN_PKT_SIZE, MAX_PKT_SIZE)
+    if random() < 0.5:
+        # Pareto 分布
+        val = (np.random.pareto(pareto_shape) + 1) * MIN_PKT_SIZE
+    else:
+        # Gaussian 分布
+        val = gauss(gaussian_mean, gaussian_std)
+
+    # 限制在 [MIN_PKT_SIZE, MAX_PKT_SIZE] 区间
+    return int(np.clip(val, MIN_PKT_SIZE, MAX_PKT_SIZE))
+
 
 def interarrival(y):
     try:
         return next(y)
     except StopIteration:
         return
+
 
 def generate_flow_packet_sizes(simulation_time=20, pg_duration=18):
     env = simpy.Environment()
@@ -33,7 +47,7 @@ def generate_flow_packet_sizes(simulation_time=20, pg_duration=18):
     y = BMAP_generator([D0, D1])
 
     iat_dist = partial(interarrival, y)
-    pkt_size_dist = partial(packet_size)
+    pkt_size_dist = partial(mixed_packet_size)
 
     pg = DistPacketGenerator(env,
                              'flow_1',

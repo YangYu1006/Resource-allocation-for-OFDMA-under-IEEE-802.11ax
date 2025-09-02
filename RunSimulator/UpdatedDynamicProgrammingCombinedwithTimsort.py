@@ -1,12 +1,16 @@
+
 import numpy as np
 import math
 import time
 import random
 
-# Number of Spacial Streams: 2
+# Number of Spacial Streams: default 2 (can change at runtime)
+N_SS = 2
 # 20MHz channel
-# MCS value:11
+# default MCS value: 11 (can change at runtime)
+MCS_VALUE = 11
 # GI: 3.2 microseconds
+GI = 3.2
 # Retransmission rate: 50%
 
 def generate_transmission_statistics(retransmission_rate):
@@ -60,6 +64,36 @@ def generate_random_with_probability(probabilities, values):
         if rand < cumulative_prob:
             return values[i]
 
+
+MCS_RATE_PER_26_SINGLE_SS = {
+    0: 1.8, 1: 3.6, 2: 5.4, 3: 7.2, 4: 10.8,
+    5: 14.4, 6: 16.2, 7: 18.0, 8: 21.6,
+    9: 24.0, 10: 27.0, 11: 30.0
+}
+
+def get_phy_rate(mcs_value=MCS_VALUE, nss=N_SS, ru_size=26):
+    base = MCS_RATE_PER_26_SINGLE_SS.get(mcs_value, MCS_RATE_PER_26_SINGLE_SS[11])
+    if ru_size == 26:
+        return base * nss
+    elif ru_size == 52:
+        return base * 2 * nss
+    else:
+        scale = ru_size / 26.0
+        return base * scale * nss
+
+def csma_ca_delay(num_contenders, cwmin=15, slot_time_us=9, difs_us=34):
+    if num_contenders <= 0:
+        num_contenders = 1
+    backoffs = [random.randint(0, cwmin) for _ in range(num_contenders)]
+    min_slots = min(backoffs)
+    delay_us = difs_us + min_slots * slot_time_us
+    if backoffs.count(min_slots) > 1:
+        # When a collision probability occurs, an additional random evasion is applied.
+        extra = random.randint(0, cwmin) * slot_time_us
+        delay_us += extra
+    return delay_us
+
+
 GeneratedPacketSize = []
 PacketSize = GeneratedPacketSize[:]
 QueuingTime = []
@@ -74,7 +108,7 @@ TotalPacketSize = sum(PacketSize)
 print(TotalPacketSize)
 PacketGenerationRate = TotalPacketSize*200/1048576
 BufferSize = 32000000   # Buffer size is 32Mb
-if PacketGenerationRate < 1280000:
+if PacketGenerationRate < 1280000 and PacketGenerationRate > 0:
     RUallocationInterval = BufferSize / PacketGenerationRate
 else:
     RUallocationInterval = 25
@@ -83,8 +117,12 @@ o = 0
 BufferOccupancy = []
 TransmissionTimeforEveryPacket = []
 
+
 while o < len(PacketSize):
-    weight = math.ceil(((PacketSize[o]/5100)/(3.5 * RUallocationInterval)) * Expectation * 10) # average rate the packets arrive in buffer in last time slot(10ms) mb/s
+    if RUallocationInterval != 0:
+        weight = math.ceil(((PacketSize[o]/5100)/(3.5 * RUallocationInterval)) * Expectation * 10) # average rate the packets arrive in buffer in last time slot(10ms) mb/s
+    else:
+        weight = 1
     w.append(weight)
     o = o+1
 print(w)
@@ -124,8 +162,10 @@ num_packets = len(GeneratedPacketSize)
 num_ordered = int(0.7 * num_packets)
 
 # 70% packets are ordered packets
-ordered_indices = sorted(random.sample(range(num_packets), num_ordered))
-
+if num_packets > 0:
+    ordered_indices = sorted(random.sample(range(num_packets), num_ordered))
+else:
+    ordered_indices = []
 
 ordered_groups = []
 i = 0
@@ -273,30 +313,44 @@ while k < 9:
         l = 0
         QueuingTimeforPacketl = 0
         while l < len(sortedPacketSizeinThisRU):
+            rate_mbps = get_phy_rate(mcs_value=MCS_VALUE, nss=N_SS, ru_size=26)  # Mbps
+            # transmission time per payload in microseconds: size(bytes)*8 / rate(Mbps)
+            tx_us = (sortedPacketSizeinThisRU[l] * 8) / rate_mbps
+            # tranmission time + GI (近似3.2us) * (Attempts-1)
             sorted_QueuingTime[l] = sorted_QueuingTime[l] + QueuingTimeforPacketl
-            QueuingTimeforPacketl = QueuingTimeforPacketl + ((sortedPacketSizeinThisRU[l] / 18.8) + 3.2) * AllocatedNumberofAttempts[l] + 3.2 * (AllocatedNumberofAttempts[l] - 1)
+            # update next packet cumulative queuing time
+            QueuingTimeforPacketl = QueuingTimeforPacketl + tx_us * AllocatedNumberofAttempts[l] + GI * (AllocatedNumberofAttempts[l] - 1)
             l = l + 1
         l = 0
         print(AllocatedPacketSize)
         while l < len(sortedPacketSizeinThisRU):
             WhichUser = search_and_output_indices(GeneratedPacketSize, sortedPacketSizeinThisRU[l])
-            QueuingTime[WhichUser[0] - 1] = sorted_QueuingTime[l]
+            if WhichUser:
+                QueuingTime[WhichUser[0] - 1] = sorted_QueuingTime[l]
             l = l + 1
         l = 0
         TransmissiontimeforRU1 = 0
+        num_contenders = max(1, len([s for s in PacketSize[1:] if s > 0]))
+        csma_delay_us = csma_ca_delay(num_contenders)
+        TransmissiontimeforRU1 += csma_delay_us
         while l < len(sorted_Attempts):
-            TransmissionTimeforEveryPacket = (sortedPacketSizeinThisRU[l] / 18.8) * sorted_Attempts[l] + 3.2 * (sorted_Attempts[l] - 1)
-            TransmissiontimeforRU1 = TransmissiontimeforRU1 + TransmissionTimeforEveryPacket + 3.2
+            rate_mbps = get_phy_rate(mcs_value=MCS_VALUE, nss=N_SS, ru_size=26)
+            tx_time_per_attempt_us = (sortedPacketSizeinThisRU[l] * 8) / rate_mbps
+            TransmissionTimeforEveryPacket = tx_time_per_attempt_us * sorted_Attempts[l] + GI * (sorted_Attempts[l] - 1)
+            TransmissiontimeforRU1 = TransmissiontimeforRU1 + TransmissionTimeforEveryPacket + GI  # plus guard
             l = l + 1
         TransmissionTime.append(TransmissiontimeforRU1)
-    print('Transmission time: %.2fμs'%TransmissiontimeforRU1)
+    try:
+        print('Transmission time: %.2fμs' % TransmissiontimeforRU1)
+    except:
+        print('Transmission time: 0.00μs')
     TotalSC = 0
     l = 0
     while l < len(x):
         TotalSC = TotalSC + w_less_than_or_equal_to_26[x[l]]
         l = l + 1
     l = 0
-    if TransmissiontimeforRU1 < 5000:
+    if 'TransmissiontimeforRU1' in locals() and TransmissiontimeforRU1 < 5000:
         while l < len(x):
             TotalTransmittedPacketSize = PacketSize[x[l]] + TotalTransmittedPacketSize
             l = l+1
@@ -318,7 +372,11 @@ print('Number of used RU: ', numberofusedRU)
 print('The rest packets: ', w_greater_than_26)
 NumberoftheRest52tonesRUs = 4 - math.ceil(numberofusedRU/2)
 print('Total number of available 52-tones RU: ', NumberoftheRest52tonesRUs)
-TimeforfinishTransmission = max(TransmissionTime)
+# TransmissionTime
+if TransmissionTime:
+    TimeforfinishTransmission = max(TransmissionTime)
+else:
+    TimeforfinishTransmission = 0
 print(TransmissionTime)
 print('Total Transmissiontime: %.2fμs'%TimeforfinishTransmission)
 o = 0
@@ -376,12 +434,21 @@ end = time.time()
 TransmissionTimeforAllocatedRU = [x for x in TransmissionTime if x > 0]
 TransmissionTimeforAllocatedRU5000 = [x if x <= 5000 else 4900 for x in TransmissionTimeforAllocatedRU]
 print('Transmission time for every RU which has been allocated: ', TransmissionTimeforAllocatedRU5000)
-Efficiency = sum(TransmissionTimeforAllocatedRU5000) / (len(TransmissionTimeforAllocatedRU5000) * 5000)
+if TransmissionTimeforAllocatedRU5000:
+    Efficiency = sum(TransmissionTimeforAllocatedRU5000) / (len(TransmissionTimeforAllocatedRU5000) * 5000)
+else:
+    Efficiency = 0.0
 runtime = round((end - start)*1000000, 2)
 print('Program running time: %.2f' % runtime)
-TimeforfinishallTransmission = runtime + max(TransmissionTime)
+if TransmissionTime:
+    TimeforfinishallTransmission = runtime + max(TransmissionTime)
+else:
+    TimeforfinishallTransmission = runtime
 print('Time for finish all transmission: %.2fμs'%TimeforfinishallTransmission)
-AverageThroughput = (TotalTransmittedPacketSize*1000000/1048576)/TimeforfinishallTransmission
+if TimeforfinishallTransmission > 0:
+    AverageThroughput = (TotalTransmittedPacketSize*1000000/1048576)/TimeforfinishallTransmission
+else:
+    AverageThroughput = 0.0
 print('Total transmitted packet size: ', TotalTransmittedPacketSize)
 print('Average throughput: %.2fMb/s'%AverageThroughput)
 print('Packet Generation rate: %.2fMb/s'%PacketGenerationRate)

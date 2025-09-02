@@ -3,11 +3,14 @@ import math
 import time
 import random
 
-# Number of Spacial Streams: 2
+# Number of Spacial Streams: default 2 (can change at runtime)
+N_SS = 2
 # 20MHz channel
-# MCS value:11
+# default MCS value: 11 (can change at runtime)
+MCS_VALUE = 11
 # GI: 3.2 microseconds
-# Retransmission rate: 50%
+GI = 3.2
+retransmission_rate = 0.2  # retransmission rate
 
 def generate_transmission_statistics(retransmission_rate):
     max_attempts = 5
@@ -26,7 +29,6 @@ def generate_transmission_statistics(retransmission_rate):
 
     return attempts, np.round(probabilities, 6)
 
-retransmission_rate = 0.2  # retransmission rate
 values, probabilities = generate_transmission_statistics(retransmission_rate)
 
 start = time.time()
@@ -59,6 +61,35 @@ def generate_random_with_probability(probabilities, values):
         cumulative_prob += prob
         if rand < cumulative_prob:
             return values[i]
+
+MCS_RATE_PER_26_SINGLE_SS = {
+    0: 1.8, 1: 3.6, 2: 5.4, 3: 7.2, 4: 10.8,
+    5: 14.4, 6: 16.2, 7: 18.0, 8: 21.6,
+    9: 24.0, 10: 27.0, 11: 30.0
+}
+
+def get_phy_rate(mcs_value=MCS_VALUE, nss=N_SS, ru_size=26):
+    base = MCS_RATE_PER_26_SINGLE_SS.get(mcs_value, MCS_RATE_PER_26_SINGLE_SS[11])
+    if ru_size == 26:
+        return base * nss
+    elif ru_size == 52:
+        return base * 2 * nss
+    else:
+        scale = ru_size / 26.0
+        return base * scale * nss
+
+def csma_ca_delay(num_contenders, cwmin=15, slot_time_us=9, difs_us=34):
+    if num_contenders <= 0:
+        num_contenders = 1
+    backoffs = [random.randint(0, cwmin) for _ in range(num_contenders)]
+    min_slots = min(backoffs)
+    delay_us = difs_us + min_slots * slot_time_us
+    if backoffs.count(min_slots) > 1:
+        # When a collision probability occurs, an additional random evasion is applied.
+        extra = random.randint(0, cwmin) * slot_time_us
+        delay_us += extra
+    return delay_us
+
 
 GeneratedPacketSize = []
 PacketSize = GeneratedPacketSize[:]
@@ -187,9 +218,16 @@ while k < 9:
         l = 0
         QueuingTimeforPacketl = 0
         while l < len(sortedPacketSizeinThisRU):
-            sorted_QueuingTime[l] = sorted_QueuingTime[l] + QueuingTimeforPacketl
-            QueuingTimeforPacketl = QueuingTimeforPacketl + ((sortedPacketSizeinThisRU[l] / 18.8) + 3.2) * AllocatedNumberofAttempts[l] + 3.2 * (AllocatedNumberofAttempts[l] - 1)
-            l = l + 1
+            ru_size = 26
+            rate_mbps = get_phy_rate(mcs_value=MCS_VALUE, nss=N_SS, ru_size=ru_size)  # Mbps
+            tx_us = (sortedPacketSizeinThisRU[l] * 8) / rate_mbps  # μs
+
+            num_contenders = 1
+            csma_delay = csma_ca_delay(num_contenders)  # μs
+
+            sorted_QueuingTime[l] = QueuingTimeforPacketl + csma_delay
+            QueuingTimeforPacketl += tx_us * sorted_Attempts[l] + GI * (sorted_Attempts[l] - 1) + csma_delay
+            l += 1
         l = 0
         print(AllocatedPacketSize)
         while l < len(sortedPacketSizeinThisRU):
@@ -199,8 +237,16 @@ while k < 9:
         l = 0
         TransmissiontimeforRU1 = 0
         while l < len(sorted_Attempts):
-            TransmissionTimeforEveryPacket = (sortedPacketSizeinThisRU[l] / 18.8) * sorted_Attempts[l] + 3.2 * (sorted_Attempts[l] - 1)
-            TransmissiontimeforRU1 = TransmissiontimeforRU1 + TransmissionTimeforEveryPacket + 3.2
+            ru_size = 26
+            rate_mbps = get_phy_rate(mcs_value=MCS_VALUE, nss=N_SS, ru_size=ru_size)  # Mbps
+            tx_us = (sortedPacketSizeinThisRU[l] * 8) / rate_mbps  # μs
+
+            num_contenders = 1
+            csma_delay = csma_ca_delay(num_contenders)  # μs
+
+            TransmissionTimeforEveryPacket = (tx_us + GI) * sorted_Attempts[l] + csma_delay
+
+            TransmissiontimeforRU1 += TransmissionTimeforEveryPacket
             l = l + 1
         TransmissionTime.append(TransmissiontimeforRU1)
     print('Transmission time: %.2fμs'%TransmissiontimeforRU1)

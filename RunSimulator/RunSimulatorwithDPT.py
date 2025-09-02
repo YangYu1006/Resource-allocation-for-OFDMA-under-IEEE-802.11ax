@@ -34,11 +34,13 @@ while a < 101:  # Maximum of users+ 1
         FairnessIndexofBigandSmallGroup = []
         FairnessIndex1 = []
         QueuingTime = [0] * a
+        arr = [random.randint(1, 10) for _ in range(a)]
+        Totalnumberofpackets = sum(arr)
         AverageProgramRunningTimeInAPeriod = []
         for _ in range(10):               #number of 5ms in a period of fairness control
             # 随机选择n个元素
             random_numbers = list(range(1, 101))
-            selected_average_packet_size = random.sample(random_numbers, a)
+            selected_average_packet_size = random.choices(random_numbers, k=Totalnumberofpackets)
             selected_elements = random.sample(my_list, a)
             FairnessIndex1 = []
             ProgramRunningTime = []
